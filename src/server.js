@@ -11,6 +11,14 @@ const corsOrigin = process.env.CORS_ORIGIN || "http://localhost:3000";
 app.use(cors({ origin: corsOrigin }));
 app.use(express.json());
 
+app.get("/", (_req, res) => {
+  res.json({
+    service: "digital-orbit-api",
+    status: "ok",
+    endpoints: ["/api/health", "/api/contact"]
+  });
+});
+
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", service: "digital-orbit-api" });
 });
