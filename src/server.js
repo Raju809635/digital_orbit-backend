@@ -49,6 +49,8 @@ const googleAuth = sheetsConfigured
     )
   : null;
 const sheetsApi = googleAuth ? google.sheets({ version: "v4", auth: googleAuth }) : null;
+const hasLeadCaptureIntegration = Boolean(mailTransporter || sheetsApi);
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const corsOptions = {
   origin(origin, callback) {
@@ -79,7 +81,8 @@ app.get("/api/health", (_req, res) => {
     service: "digital-orbit-api",
     integrations: {
       email: Boolean(mailTransporter),
-      googleSheets: Boolean(sheetsApi)
+      googleSheets: Boolean(sheetsApi),
+      leadCaptureReady: hasLeadCaptureIntegration
     }
   });
 });
@@ -94,7 +97,9 @@ async function sendLeadEmail(submission) {
 
 Name: ${submission.name}
 Email: ${submission.email}
+Business Type: ${submission.businessType}
 Budget: ${submission.budget}
+Source Page: ${submission.sourcePage}
 Created At: ${submission.createdAt}
 
 Project Idea:
@@ -121,13 +126,15 @@ async function appendLeadToSheet(submission) {
     submission.createdAt,
     submission.name,
     submission.email,
+    submission.businessType,
     submission.budget,
-    submission.projectIdea
+    submission.projectIdea,
+    submission.sourcePage
   ];
 
   await sheetsApi.spreadsheets.values.append({
     spreadsheetId: process.env.GOOGLE_SHEET_ID,
-    range: `${process.env.GOOGLE_SHEET_NAME || "Leads"}!A:E`,
+    range: `${process.env.GOOGLE_SHEET_NAME || "Leads"}!A:G`,
     valueInputOption: "RAW",
     requestBody: {
       values: [row]
@@ -138,17 +145,36 @@ async function appendLeadToSheet(submission) {
 }
 
 app.post("/api/contact", async (req, res) => {
-  const { name, email, projectIdea, budget } = req.body ?? {};
+  const { name, email, businessType, projectIdea, budget, sourcePage = "website" } = req.body ?? {};
 
-  if (!name || !email || !projectIdea || !budget) {
+  const trimmedName = String(name ?? "").trim();
+  const trimmedEmail = String(email ?? "").trim();
+  const trimmedBusinessType = String(businessType ?? "").trim();
+  const trimmedProjectIdea = String(projectIdea ?? "").trim();
+  const trimmedBudget = String(budget ?? "").trim();
+  const trimmedSourcePage = String(sourcePage ?? "website").trim();
+
+  if (!trimmedName || !trimmedEmail || !trimmedBusinessType || !trimmedProjectIdea || !trimmedBudget) {
     return res.status(400).json({ message: "All fields are required." });
   }
 
+  if (!emailPattern.test(trimmedEmail)) {
+    return res.status(400).json({ message: "Please enter a valid email address." });
+  }
+
+  if (!hasLeadCaptureIntegration) {
+    return res.status(503).json({
+      message: "Lead capture is not configured on the server yet. Please contact us on WhatsApp for now."
+    });
+  }
+
   const submission = {
-    name,
-    email,
-    projectIdea,
-    budget,
+    name: trimmedName,
+    email: trimmedEmail,
+    businessType: trimmedBusinessType,
+    projectIdea: trimmedProjectIdea,
+    budget: trimmedBudget,
+    sourcePage: trimmedSourcePage,
     createdAt: new Date().toISOString()
   };
 
